@@ -1,0 +1,287 @@
+---
+title: "lab_01"
+output: html_document
+date: "2024-07-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# UNIX
+
+
+##1: Show the Unix command that you would use to create a directory to hold the files for this lab (including your R Markdown file) and show the Unix command to navigate to that directory.
+```{bash eval=FALSE}
+cd course-home
+mkdir lab1
+cd lab1
+cp /course/data/trade/vehicles/* /course/users/smao419/lab1/
+touch lab1.rmd
+```
+
+## 2: Write a shell command that shows information about all the data files including the size in bytes for each of them.
+
+```{bash}
+ls -l *.csv
+```
+
+## 3: Write a shell command that shows the number of lines in the vehicles-2020.csv file.
+
+```{bash}
+wc -l vehicles-2020.csv 
+```
+
+## 4: In Lab Zero we used all records with HS code (HSC) 8703231915. Write a shell command that extracts all records with HSC 8703231915 from all the files into a new file car-imports.data. Then write a shell command that counts the number of lines in the newy created file. Does it match the row count from Lab Zero?
+```{bash}
+head -n 1 vehicles-2020.csv >car-imports.data
+grep 8703231915 *.csv >> car-imports.data
+wc -l car-imports.data
+```
+YES, it does match the row count from Lab Zero. In the original data in Lab Zero, there are a total of 1080 lines (excluding headers). In the newly generated file car-imports.data, there are also a total of 1080 lines (excluding headers). In conclusion, these two files have the same content (excluding headers).
+
+## 5: Write a shell script which returns total counts (number of lines) for all HS codes (taking into account all files) in ascending count order and print the last five lines of the output.
+
+```{bash}
+sed '1d' vehicle*.csv| cut -d ',' -f 2 | sort -n | uniq -c | sort -n | tail -n 5
+```
+
+
+# We are only interested in new, gasoline-powered personal vehicles. Those have the following HS codes depending on the engine: 8703218006, 8703228003, 8703238003, 8703248003, 8703211915, 8703221915, 8703231915, 8703241915. Write one or more shell comands that that create a valid CSV file named new-car-imports.csv from all the vehicle data files containing only the HS codes listed above.
+
+```{bash}
+head -n 1 vehicles-2011.csv > new-car-imports.csv
+grep -h -E '8703218006|8703228003|8703238003|8703248003|8703211915|8703221915|8703231915|8703241915' vehicles*.csv >> new-car-imports.csv
+wc -l new-car-imports.csv
+```
+
+
+
+
+# Loading data 
+Double check that 'question 6' generate data are same as data provided from canvas
+```{r}
+cars <- read.csv("/course/data/trade/new-car-imports.csv")
+test_df <- read.csv("new-car-imports.csv")
+dim(cars)
+dim(test_df)
+```
+
+# Clean data 
+
+```{r}
+#Re-name all the clumn names that simplify our following process.
+colnames(cars) <- c("Month", "HSC", "HSDescription", "Unit", "Country", "VFD", "CIF", "Quantity", "Status", "Unknown")
+#convert to numeric
+cars$VFD<- as.numeric(gsub(",", "",  cars$VFD))
+cars$CIF <- as.numeric(gsub(",", "",  cars$CIF))
+cars$Quantity <- as.numeric( gsub(",", "", cars$Quantity))
+# re-formated date
+cars$Date <- as.Date(paste0(cars$Month, "01"), format = "%Y%m%d")
+str(cars)
+```
+
+# Explore
+
+```{r }
+car_df <- data.frame(cars)
+# Summing by 'Country'
+result <- tapply(car_df$VFD, car_df$Country, sum)
+# Convert result to a data frame
+
+result_df <- data.frame(Attribute = names(result), Value = as.numeric(result))
+
+
+sorted_result_desc <- result_df[order(result_df$Value), ] 
+#par(mar = c(4, 10, 4, 4))
+
+
+# VFD
+barplot(sorted_result_desc$Value,
+names.arg = sorted_result_desc$Attribute,
+horiz = TRUE,
+las = 1, # Labels horizontal (1 for horizontal text) main="VFD value by contry",
+cex.names = 0.6) # Adjust label size if necessary
+```
+
+In this case, Japan has a massive impact on this dataset, so we will use log-transform to reduce the outliers' impact and improve interpretability.
+
+
+```{r}
+# Apply log function
+barplot(log(sorted_result_desc$Value),
+names.arg = sorted_result_desc$Attribute,
+horiz = TRUE,
+las = 1, # Labels horizontal (1 for horizontal text) main="VFD value by contry",
+cex.names = 0.6) # Adjust label size if necessary
+
+```
+
+## We want to look at the evolution of the import value by HS code over time. Compute the aggregated monthly import value (VFD) of each HS code and draw a line plot of the result.
+
+
+```{r }
+
+
+
+# Ensure 'Date' is in the correct Date format
+cars$Date <- as.Date(cars$Date, format="%Y-%m-%d")
+
+# Aggregate the monthly import values (VFD) by HS code
+monthly_imports <- xtabs(VFD ~ format(Date, "%Y-%m") + HSC, data = cars)
+
+# Convert the table to a data frame for plotting
+monthly_imports_df <- as.data.frame(as.table(monthly_imports))
+colnames(monthly_imports_df) <- c("Month", "HSC", "VFD")
+
+# Convert Month back to Date format
+monthly_imports_df$Month <- as.Date(paste0(monthly_imports_df$Month, "-01"))
+
+# Set up the plot
+plot(monthly_imports_df$Month, monthly_imports_df$VFD, type = "n",
+     xlab = "Month", ylab = "Import Value (VFD)", main = "Monthly Import Value by HS Code")
+
+# Get unique HS Codes
+unique_hsc <- unique(monthly_imports_df$HSC)
+
+# Define colors (you can expand this if you have more HS Codes)
+colors <- rainbow(length(unique_hsc))
+
+# Loop through each HS Code and add lines to the plot
+for (i in seq_along(unique_hsc)) {
+  subset_df <- subset(monthly_imports_df, HSC == unique_hsc[i])
+  lines(subset_df$Month, subset_df$VFD, col = colors[i])
+}
+
+# remove legend for better visiability
+#legend("topright", legend = unique_hsc, col = colors, lty = 1, title = "HS Code")
+```
+
+
+
+
+The plot reveals industry instability, notably a significant decline in HS Code 8703231915 (blue) around 2018, and a fluctuating trend for HS Code 8703228003 (light green), with an initial increase followed by a sharp drop and recent recovery.
+
+Given the varied price ranges of different car brands and models, normalizing the dataset will ensure consistency and reduce the influence of extreme values. Additionally, the significant turning point around 2017-2018 suggests a change in the industry. For a detailed analysis, I will split the data into two phases: before and after this major decline, to investigate potential factors reshaping the industry.
+
+```{r}
+# Set up the plot
+plot(monthly_imports_df$Month, monthly_imports_df$VFD, type = "n",
+     xlab = "Month", ylab = "Import Value (VFD)", main = "Monthly Import Value by HS Code")
+
+# Get unique HS Codes
+unique_hsc <- unique(monthly_imports_df$HSC)
+
+# Define colors (you can expand this if you have more HS Codes)
+colors <- rainbow(length(unique_hsc))
+
+# Loop through each HS Code and add lines to the plot
+for (i in seq_along(unique_hsc)) {
+  subset_df <- subset(monthly_imports_df, HSC == unique_hsc[i])
+  lines(subset_df$Month, subset_df$VFD, col = colors[i])
+}
+
+#Add legend for readability
+legend("topright", legend = unique_hsc, col = colors, lty = 1, title = "HS Code")
+```
+
+# Model 
+
+## Let us focus on the imports from Germany, i.e., the following should be performed on the subset of cars where the Country is Germany. We want to predict the total monthly new car VFD import value (aggregated over all HS codes) over time. In order to make interpretation easier, scale the VFD variable such that its unit are millions of NZD. We are going to limit ourselves to simple linear regression.
+
+
+## Generate training and test sets, where the training set is 90% of the data and the test set is only 10% of the data. Choose the dataset partitions such that you are testing with future data (relative to training).
+
+## Fit two models to the training data: a simple overall mean and a linear regression model with the Date as a predictor variable.
+
+## Calculate RMSE for the predictions of the two models on the test set. Which model performs better?
+
+1: extrac data and clean it out
+
+```{r}
+# Filter data for Germany
+germany_data <- subset(cars, Country == "Germany")
+# Aggregate VFD by Month
+monthly_data <- aggregate(VFD ~ Date, data = germany_data, FUN = sum)
+# Rename the columns to match your desired output
+colnames(monthly_data) <- c("Date", "VFD_total")
+```
+
+2 split 
+
+```{r}
+
+# Split data into training and test sets, by date start on 2019-01
+n <- nrow(monthly_data)
+train_size <- floor(0.9 * n)
+train_set <- monthly_data[1:train_size, ]
+test_set <- monthly_data[(train_size + 1):n, ]
+```
+
+3 train
+
+```{r}
+# training mean prediction 
+mean_vfd <- mean(train_set$VFD_total)
+mean_predictions <- rep(mean_vfd, nrow(test_set))
+
+
+# LM model
+lm_model <- lm(VFD_total ~ Date, data = train_set)
+lm_predictions <- predict(lm_model, newdata = test_set)
+```
+
+4 calculating RMSE
+
+```{r}
+rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+mean_rmse <- rmse(test_set$VFD_total, mean_predictions)
+lm_rmse <- rmse(test_set$VFD_total, lm_predictions)
+
+
+# Output RMSE results
+cat("Overall Mean Model RMSE: ", mean_rmse, "\n")
+cat("Linear Regression Model RMSE: ", lm_rmse, "\n")
+
+# Compare performance
+if (mean_rmse < lm_rmse) {
+  cat("Overall Mean Model performs better.\n")
+} else if (mean_rmse > lm_rmse) {
+  cat("Linear Regression Model performs better.\n")
+} else {
+  cat("Both models perform equally well.\n")
+}
+
+```
+
+
+5 Plotting
+
+```{r }
+# Plot the data
+plot(monthly_data$Date, monthly_data$VFD_total, type='l',
+     main="Monthly Car Import Value from Germany",
+     xlab="Year", ylab="Value for Duty (in millions NZD)")
+
+# Add the mean line
+abline(h=mean_vfd, col=4, lwd=2)
+
+# Add the linear regression line
+abline(lm_model, col=2, lwd=2)
+
+# Add the vertical line
+vline_date <- test_set$Date[1]
+abline(v=vline_date, col=2, lwd=2, lty=2)
+```
+
+
+
+The plot reveals that both the linear model and the mean fail to effectively capture the trends in this dataset due to its complexity and instability. Despite the lower RMSE of the mean model, it provides a flat line that does not reflect any meaningful trend. The linear model shows a gradual upward trend but misses significant details and fluctuations crucial for understanding the industry's dynamics. Both models are inadequate for predicting future trends in the car import industry given the intricate and variable nature of the data.
+
+
+# Summary
+
+The raw database provides extensive information on NZ car imports, making it too complex for simple linear models or mean-based analysis to fully capture. For example, the RMSE results show that the mean model performs better, indicating that the linear model does not effectively address the data. Additionally, the VFD analysis reveals that Japan is the most significant car importing country for NZ, followed by Korea and Thailand.
