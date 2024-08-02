@@ -1,0 +1,65 @@
+---
+title: "lab02"
+author: "Shuo Mao 437681258"
+date: "2024-08-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 1.Use the curl command in the unix shell to download the exchange rate for the enitre year 2023 into a file nzd-2023.json between Euro and NZD (New Zealand Dollar). You should use a single API call (i.e, one curl command) that is tailored to the question, i.e., the result should not include any other currencies.
+
+```{bash}
+#curl  -o nzd_2023.json  https://api.frankfurter.app/2023-01-01..2023-12-31?to=NZD&from=EUR
+curl  -o nzd_2023.json  "https://api.frankfurter.app/2023-01-01..2023-12-31?from=EUR&to=NZD"
+```
+### 2.Use the curl command in the unix shell to download the exchange rate for the date range 2020/01/01 to 2023/12/31 into a file long.json between Euro and the following currencies: USD (US Dollar), GBP (British Pound), AUD (Australian Dollar) and NZD (New Zealand Dollar). You should use a single API call (i.e, one curl command with one URL) to retrieve all the necessary data.
+
+```{bash}
+curl -o long.json "https://api.frankfurter.app/2020-01-01..2023-12-31?from=EUR&to=USD,GBP,AUD,NZD"
+```
+
+
+### 3.Read the nzd-2023.json file into R and process it such that you obtain a data frame nzd as follows:
+
+```{r, eval=FALSE}
+install.packages("jsonlite")
+library("jsonlite")
+```
+```{r}
+nzd_data <- fromJSON("nzd_2023.json")
+
+rates <- sapply(nzd_data$rates, function(x) x$NZD)
+dates <- names(nzd_data$rates)# extrac data columns use for later
+# Create the data frame
+nzd <- data.frame(
+  date = as.Date(dates),
+  nzd = rates
+)
+str(nzd)
+```
+
+
+### 4.Similary, read the long.json file into R and process it such that you obtain a matrix rates.m as follows:
+
+```{r}
+long_data <- fromJSON("long.json")
+
+trans <- function(long_data, columns ){
+  ### @return : transformed data set 
+  ### @param: json data need to be transformed
+  ### @desc: loading rates columsn to un-list it to single elements, then transform each single element to a 
+  ### combined matrix.
+  test <- head(data$columns,15)
+  st <- sapply(test, function(x) {unlist(x)})
+  stt <- t(st)
+  stt
+}
+rates.m <- t(sapply(long_data$rates, function(x) {unlist(x)} ))# = trans function
+
+str(rates.m )
+```
+
+

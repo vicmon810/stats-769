@@ -1,0 +1,200 @@
+---
+title: "lab02"
+author: "Shuo Mao 437681258"
+date: "2024-08-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 1.Use the curl command in the unix shell to download the exchange rate for the enitre year 2023 into a file nzd-2023.json between Euro and NZD (New Zealand Dollar). You should use a single API call (i.e, one curl command) that is tailored to the question, i.e., the result should not include any other currencies.
+
+```{bash}
+curl  -o nzd_2023.json  "https://api.frankfurter.app/2023-01-01..2023-12-31?from=EUR&to=NZD"
+```
+### 2.Use the curl command in the unix shell to download the exchange rate for the date range 2020/01/01 to 2023/12/31 into a file long.json between Euro and the following currencies: USD (US Dollar), GBP (British Pound), AUD (Australian Dollar) and NZD (New Zealand Dollar). You should use a single API call (i.e, one curl command with one URL) to retrieve all the necessary data.
+
+```{bash}
+curl -o long.json "https://api.frankfurter.app/2020-01-01..2023-12-31?from=EUR&to=USD,GBP,AUD,NZD"
+```
+
+
+### 3.Read the nzd-2023.json file into R and process it such that you obtain a data frame nzd as follows:
+
+```{r}
+install.packages("jsonlite")
+library("jsonlite")
+nzd_data <- fromJSON("nzd_2023.json")
+
+rates <- sapply(nzd_data$rates, function(x) x$NZD)
+dates <- names(nzd_data$rates)# extrac data columns use for later
+# Create the data frame
+nzd <- data.frame(
+  date = as.Date(dates),
+  nzd = rates
+)
+str(nzd)
+```
+
+
+### 4.Similary, read the long.json file into R and process it such that you obtain a matrix rates.m as follows:
+
+```{r}
+long_data <- fromJSON("long.json")
+
+trans <- function(long_data, columns ){
+  ### @return : transformed data set 
+  ### @param: json data need to be transformed
+  ### @desc: loading rates columsn to un-list it to single elements, then transform each single element to a 
+  ### combined matrix.
+  test <- head(data$columns,15)
+  st <- sapply(test, function(x) {unlist(x)})
+  stt <- t(st)
+  stt
+}
+rates.m <- t(sapply(long_data$rates, function(x) {unlist(x)} ))# = trans function
+
+str(rates.m )
+```
+
+### 5.Check the quality of the nzd data frame (typically via tools like summary and plot - you don’t have to include your exploratory code here). Can you see any patterns in the dates? Include code that highlights your findings (can be either a plot or a suitable code+printed output illustrating your point) and provide an explanation (one sentence).
+
+```{r, echo=FALSE}
+summary(nzd)
+plot(nzd, type="l")
+
+```
+
+In the summary that I can discover that the rate have max value of 1.841 and min value of 1.668, and  median is around 1.762 also 1st quarter is 1.668 and 3rd quater is 1.798. just from the summary that this figure seem to be stable, by just look at those number iteslf this data set trend to be identify as stable. However when we combine the backgrounds with the figure it become to unstable, as show in the plot that the currency rate has dramatic Change with in 2023.
+
+
+### 6.Check the quality of the rates data frame in a similar way as in the previous question. Are the date patterns the same? Explain (use code+output where necessary; it may be helpful to read the API documentation to find an explantion).
+
+```{r}
+summary(rates.m)
+dates <- seq(as.Date("2020-01-01"), as.Date("2023-12-31"), by = "week")
+matplot(dates, rates.m, type = "l")
+legend("right", legend = colnames(rates.m), col = 1:4, lty = 1, lwd = 2)
+```
+
+In the summary of each currency have quite different range, in term AUD and NZD are close to each other, in addition AUD have smaller min value but not greater max value, also both Medina and mean AUD are lower than NZD. In compression USD have the lowest min value, and NZD have the highest max value. Besides in the plot it illustrates NZD(Green) and AUD(BLACK) are have similar patterns at most of time, besides  both 4 countries  are  having one similar parrten in the beginning of 2020 then no more.
+
+### 7.Plot a line plot of all the exchange rates over time. The plot should look like this:
+
+```{r,echo=F}
+dates <- seq(as.Date("2020-01-01"), as.Date("2023-12-31"), by = "week")
+matplot(dates, rates.m, type = "l")
+legend("right", legend = colnames(rates.m), col = 1:4, lty = 1, lwd = 2)
+
+```
+
+### 8.In theory the NZD exchange rates in nzd should be just a subset of rates.m. Is that the case? Explain (use code+output where necessary).
+
+From earlier that we fetch nzd from frankfurter of entire 2023, and the data rates.m contains 4 countries currency rate changes across from 2020/1 to 2023/12, so in this theory that rates.m should contains nzd.
+```{r}
+# select all data from NZD, it stored in 3rd columns
+nzd_all <- rates.m[,3]
+names(nzd_all) 
+(nzd_23 <- nzd_all[indices <- grep("^2023", names(nzd_all))])
+
+nzd_rate <- t(sapply(nzd_data$rates, function(x) {unlist(x)} ))
+nzd_rate - nzd_all
+```
+
+In this output that we can see that none of result equals zero which indicates those two data frame should not consider as same one. In summary the data frame rates.m consider does not contain data frame of nzd. 
+
+
+### 9.We are interested whether there are any currencies that behave similarly to the New Zealand Dollar (NZD). Just to give you an intuition, create a data frame rates from rates.m such that it consists of exactly four columns, each corresponding to one currency (thus rows correspond to dates, but the date itself is not a column in the data frame). Then use pairs(rates, pch=19, col=4) to show pairwise scatterplots between all currencies. Interpret the result and suggest which currency you think behaves the most similarly to NZD
+
+```{r}
+rate_df <- as.data.frame(rates.m)
+pairs(rate_df, pch = 19, col = 4, main = "Pairwise Scatterplots of Exchange Rates")
+```
+Read from the pair plot that we can discover the AUD has best correlation with NZD, because the scatterplots between NZD and AUD are the most aligned pattern and it indicates a tight and almost straight line. where as GBP and USD are have un-aligned pattern, also neither of GBP nor USD persent a tight scatter plots. 
+
+
+### 10.One idea is to predict the NZD exhange rate using another currency by a linear model. Fit three such models: for each of the currencies AUD, GBP and USD. For each model, print its coefficients and the root mean square error (RMSE) based on the training data (we use all data for training this time).
+
+```{r}
+
+# linear model
+m1 <- lm(NZD ~ AUD, rate_df)
+m2 <- lm(NZD ~ GBP, rate_df)
+m3 <- lm(NZD ~ USD, rate_df)
+
+```
+```{r}
+summary(m1)
+```
+```{r}
+summary(m2)
+```
+
+```{r}
+summary(m3)
+```
+
+```{r}
+RMSE <- function(obs, pred) sqrt(mean((obs - pred)^2))
+
+RMSE(rate_df$AUD, predict(m1))
+RMSE(rate_df$GBP, predict(m2))
+RMSE(rate_df$USD, predict(m3))
+```
+
+### Interpret the coefficients in the USD model - what does this mean in practice?
+
+the coefficients in USD model are almost approach to 0, which means it have 0 relationship between USD and NZD. 
+
+### Which of the three currencies can be modelled the best based on RMSE? Does it match you expectation from question 9?
+
+collect data set from RMSE values above that we can see the GBP have largeest RMSE value, followed by USE then AUD, the large RMSE value indicates that there is a greater difference between the exchange rate values of the two currencies, suggesting they behave less similarly. Therefore this is means AUD has the best performance from the RMSE score. 
+
+
+# Summary: 
+
+In this lab, I successfully accomplished the following tasks:
+
+## Data Acquisition:
+
+  Utilized the _curl_ command to fetch exchange rate data from the Frankfurter _API_ for specific date ranges and currency pairs. The data was stored in _JSON_ format for further processing.
+
+## Data Processing:
+
+  Read the _JSON_  files into R using the `jsonlite` package.
+  
+  Extracted and transformed the data into appropriate data structures (data frames and matrices) for analysis.
+  
+  Created a data frame nzd for the NZD exchange rates for the year 2023.
+  
+  Formed a matrix rates.m that includes the exchange rates for USD, GBP, AUD, and NZD from 2020 to 2023.
+  
+## Data Quality Check:
+
+  Conducted exploratory data analysis using summary statistics and plots.
+  
+  Identified patterns in the exchange rates, observing that NZD and AUD exhibit similar trends, while GBP and USD showed different behaviors.
+  
+  
+## Visualization:
+
+  Generated pairwise scatterplots to visually compare the relationships between the currencies.
+  Observed that the scatterplots between NZD and AUD were the most aligned, indicating a strong correlation.
+
+## Modeling:
+
+  Built linear regression models to predict NZD exchange rates using AUD, GBP, and USD as predictors.
+   
+  Evaluated the models based on their coefficients and Root Mean Square Error (RMSE).
+  
+  Found that the AUD model had the best performance, confirming the expectation from the scatterplot analysis.
+  
+## Conclusion:
+
+  The analysis demonstrated that AUD behaves most similarly to NZD among the currencies considered. This was supported by both visual inspection of scatterplots and quantitative assessment using linear models and RMSE.
+
+
+
+
