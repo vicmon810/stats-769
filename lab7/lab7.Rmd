@@ -1,0 +1,385 @@
+---
+title: "lab7"
+output: html_document
+date: "2024-10-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# data 
+
+```{r, warning=FALSE}
+library(rpart)
+library(mclust)
+library(parallel)
+library(e1071)
+library(randomForest)
+```
+
+```{r}
+zip = read.csv("/course/data/2024-yong/lab07/zip.csv")
+dim(zip)
+
+data <- zip[zip$digit == 6 | zip$digit == 8, ]
+
+str(data)
+set.seed(769)
+```
+
+# Variable Selection
+
+### 1.Ensemble methods are good tools for finding important predictor variables. In aid of Random Forest, find the two most important predictors out of 256 ones (in terms of Accuracy), for classifying between observations with digit = 6 and digit = 8.
+
+```{r, fig.width= 20}
+set.seed(769)
+# Convert the response variable to a factor
+data$digit <- as.factor(data$digit)
+rf <- randomForest(digit ~ ., data, importance = TRUE)
+rf
+plot(rf)
+
+```
+```{r}
+set.seed(769)
+import <- importance(rf, type=1)
+
+import_sorted <- import[order(-import[, "MeanDecreaseAccuracy"]), , drop = FALSE]
+(top_2 <- head(import_sorted, 2))
+
+```
+
+
+```{r}
+
+ops_rf <- randomForest(digit ~ p75 + p91, data)
+ops_rf
+```
+
+### What is the OOB error using all predictors? What is the OOB error if only the two selected predictors are used with Random Forest?
+
+The OOB error is 0.97%, if use two use two selected predictors the OOB is increase to 6.36%.
+
+
+### To create another subset with two predictors, consider the top ten most important predictors given by the Random Forest model for 256 predictors from Question 1. The first most important predictor will still be used, but the second one is the least correlated with the top one, out of the remaining 9 predictors.
+
+
+```{r}
+set.seed(769)
+# 10 most imprtant 
+top_10 <- rownames(head(import_sorted, 10))
+
+# most important 
+top_predictor <- top_10[1]
+# the rest
+remaining_pred <- top_10[-1]
+
+corr <- sapply(remaining_pred, function(pred){
+  cor(data[[top_predictor]], data[[pred]])
+})
+
+
+# selecting least correlated predictior
+(least <- names(which.min(abs(corr))))
+
+# create substring with two selected pred
+subdata <- data[,c("digit",top_predictor, least)]
+str(subdata)
+```
+
+What is the OOB error if these two selected predictors are used with Random Forest? Do you think these two predictors form a better subset of size 2 than the one obtained in Question 1?
+```{r}
+set.seed(769)
+rf2 <- randomForest(digit ~. , subdata, importance = T)
+rf2
+```
+
+The OOB error this time is 6.36% which superisely is the same as last time. 
+
+The subset of data with two digit classes and the two predictor variables found in Question 2 will be used in Questions 3-5 for clustering and in Questions 6-8 for support vector machines.
+
+# Clustering
+
+## 3.Without using the digit variable, run the K-means algorithm to partition the images into K = 2, 3, ..., 7 clusters, respectively.
+
+```{r}
+set.seed(769)
+ari = double(5)
+par(mfrow=c(3,2))
+for(i in seq(2,7,1)){
+  cluster <- kmeans(subdata, centers = i)
+  with(subdata, plot(p75, p37, col = cluster$cluster + 2, main = paste0("k=", i)))
+  points(cluster$centers, bg=3:4, pch =21, cex=1.8, lwd =2)
+  ari[i-1] = adjustedRandIndex(cluster$cluster, subdata$digit)
+}
+ari
+
+
+```
+
+### Compute the adjusted Rand indices for these clustering results, by comparing them with the true class labels. Does this unsupervised learning method do a good job for the supervised data set here, in particular when K=2?
+
+In the particular when k =2 the ari is have a reletive high score 0.995 which inidcate the unsupervised learning method did a good job, when K increase it might cause overfitted. 
+
+
+## 4.Redo Question 3, using instead each of the four linkage methods: "complete", "single", "average" and "centroid"
+
+## Complete 
+```{r}
+# Calculate the distance matrix
+d <- dist(subdata)
+arihc <- double(5)
+method <- c("complete", "single", "average", "centroid")
+par(mfrow=c(2,3))
+for (m in method){
+   # Perform hierarchical clustering with the specified method
+  hc <- hclust(d, method = m)
+  
+  for (k in 2:7){
+    # cluster labels of oberservations 2 to 7 
+    trees <- cutree(hc, k)
+    arihc[k-1] <- adjustedRandIndex(subdata$digit, trees)
+    # cat("Mehtod: ", m, " - K =", k, " ARI = ", round(arihc, 4), "\n")
+    with(subdata, plot(p75, p37, col = cluster$cluster + 2, main = paste0("Mehtod = ", m, " k=", k)))
+  points(cluster$centers, bg=3:4, pch =21, cex=1.8, lwd =2)
+  }
+  cat("Method: ", m, "ARI = ", arihc, "\n")
+}
+
+
+
+```
+
+
+## 5.Produce a scatter plot for each of the following 6 partitioning results with 2 classes/clusters:
+
+
+```{r}
+# Create a new dataset with jittered values (sd = 0.1) to avoid overplotting
+jittered_data <- as.data.frame(lapply(subdata, function(x) {
+  if (is.numeric(x)) jitter(x, factor = 0.1) else x
+}))
+
+```
+
+
+##### class labels
+```{r}
+plot(jittered_data$p75, jittered_data$p37, col = as.factor(data$digit), pch = as.numeric(as.factor(data$digit)), 
+     main = "True Class Labels", xlab = "P75", ylab = "P37")
+```
+#### K-means
+```{r}
+kmeans_result <- kmeans(subdata, centers = 2)
+plot(jittered_data$p75, jittered_data$P37, col = kmeans_result$cluster, pch = kmeans_result$cluster + 1, 
+     main = "K-means Clustering", xlab = "P75", ylab = "P37")
+```
+
+##### complete linkage
+
+```{r}
+hc_complete <- hclust(d, method = "complete")
+clusters_complete <- cutree(hc_complete, k = 2)
+plot(jittered_data$p75, jittered_data$p37, col = clusters_complete, pch = clusters_complete + 1, 
+     main = "Complete Linkage", xlab = "P75", ylab = "P37")
+```
+##### single linkage
+
+```{r}
+hc_single <- hclust(d, method = "single")
+clusters_single <- cutree(hc_single, k = 2)
+plot(jittered_data$p75, jittered_data$p37, col = clusters_single, pch = clusters_single + 1, 
+     main = "Single Linkage", xlab = "P75", ylab = "P37")
+```
+
+##### Average Linkage
+
+```{r}
+hc_average <- hclust(d, method = "average")
+clusters_average <- cutree(hc_average, k = 2)
+plot(jittered_data$p75, jittered_data$p37, col = clusters_average, pch = clusters_average + 1, 
+     main = "Average Linkage", xlab = "P75", ylab = "P37")
+```
+
+
+##### Centroid Linkage
+
+```{r}
+hc_centroid <- hclust(d, method = "centroid")
+clusters_centroid <- cutree(hc_centroid, k = 2)
+plot(jittered_data$p75, jittered_data$p37, col = clusters_centroid, pch = clusters_centroid + 1, 
+     main = "Centroid Linkage", xlab = "P75", ylab = "P37" )
+```
+
+### Do you think the ARI values make sense?
+Base on the result plot, that ARI is make sense, because when K =2 all kind of cluster are having similar performance therefore provide the ARI correctness.
+
+# Support Vector Machines
+
+### split and train
+```{r,}
+train_data <- subdata[1:500,]
+test_data <- subdata[501 :nrow(subdata), ]
+```
+
+### Train support vector machines using the linear kernel, for cost = 0.001, 0.01, 0.1, 1, 10, 100, respectively.
+
+Produce a classification plot for each value of cost, which also shows the decision boundary. You can either use the plot function provided in the e1071 package or write your own code (perhaps similar to mine). Also, add some jittering to the data (with sd=0.1, say), and also show the support vectors, at the same locations as the jittered observations that they are associated with.
+
+```{r}
+
+for (i in c(0.001, 0.01, 0.1, 1, 10, 100)){
+  r = svm(digit ~ ., data= train_data, scale = F, kernel = "linear", cost = i)
+  plot(r, train_data)
+  mtext(paste0("cost", i))
+  yhat = predict(r,newdata = test_data)
+  # Create a confusion matrix to compare the actual 'class' labels from the test data with the predicted class labels from the Naive Bayes mode
+  print(table(test_data$digit, yhat))
+  
+  # Calculate the accuracy of the model by checking the proportion of correct predictions
+  A = mean(test_data$digit == yhat)
+  cat(paste0("cost = ",i, " Accuracy rate ", A, '\n'))
+}
+
+```
+
+### What is the effect of cost here, on the decision boundary and the number of support vectors?
+
+From the plot above, that the cost indicate the accuracy rate, higher accuracy rate come with higher cost value.
+
+### 7.Compute the training and test errors (misclassification rates) for each of the support vector machines found in Question 6.
+
+From output Q6 that the accuracy rate have a major gap between cost 0.001 with the rest, which indicates that with cost 0.01 SVM are able to classify over 90% of class. 
+
+
+### 8.Consider using radial kernels for support vector machines. With cost=1 held fixed, train support vector machines, for gamma = 0.001, 0.01, 0.1, 1, 10, 100, respectively.
+
+```{r}
+
+for (i in c(0.001, 0.01, 0.1, 1, 10, 100)){
+  r = svm(digit ~ ., data= train_data, scale = F, kernel = "radial", cost = 1, gamma = i)
+  plot(r, train_data )
+  mtext(paste0("gamma", i))
+  yhat = predict(r,newdata = test_data)
+  # Create a confusion matrix to compare the actual 'class' labels from the test data with the predicted class labels from the Naive Bayes mode
+  print(table(test_data$digit, yhat))
+  # Calculate the accuracy of the model by checking the proportion of correct predictions
+  A = mean(test_data$digit == yhat)
+  cat(paste0("gamma = ",i, " Accuracy rate ", A, '\n'))
+}
+```
+
+### What is the effect of gamma here, on the decision boundary and the number of support vectors?
+
+The gamma effect helps improve the performance compare to the change the cost.
+
+### Do you think using the radial kernel helps here, as compared with the linear kernel?
+
+Yes, the radial kernel helps, from the result that initial accuracy rate is improve a lot, but with the gamma increase the performance till gamma = 10 reach to the peak, then drop down.
+
+## 10.Now consider using all 256 predictors. Find the best values for cost and gamma based on 10-fold cross-validation (just one run) from the train set.
+
+```{r, eval=FALSE}
+train_256 <- zip[1:500,]
+test_256 <- zip[501 :nrow(zip), ]
+values <- c(0.001, 0.01, 0.1, 1, 10, 100)
+rt = tune(svm, digit ~ ., data=train_256, kernel="radial", scale=FALSE, ranges = list(cost = values, gamma = values),validation.x=10 )
+summary(rt)  
+
+model <-rt$best.model
+# Make predictions on the train set
+yhat_train <- predict(model, newdata = train_256)
+# Calculate and print accuracy on the training set
+train_accuracy <- 1- mean(train_256$digit == yhat_train)
+cat("Training Set Accuracy: ", sprintf("%.10f", train_accuracy), "\n")
+
+# Make predictions on the test set
+yhat_test <- predict(rt$best.model, newdata = test_256)
+
+# Calculate and print accuracy on the test set
+test_accuracy <- 1- mean(yhat_test == test_256$digit)
+cat("Test Set Accuracy: ", sprintf("%.10f", test_accuracy), "\n")
+```
+```
+Parameter tuning of ‘svm’:
+
+- sampling method: 10-fold cross validation 
+
+- best parameters: 
+    cost gamma
+    10   0.01
+
+- best performance: 1.615847 
+
+- Detailed performance results:
+          cost  gamma error  dispersion
+          
+          1e-03	1e-03	8.720153	0.8214717	
+          1e-02	1e-03	8.576763	0.8004872	
+          1e-01	1e-03	7.482756	0.6376604	
+          1e+00	1e-03	3.950381	0.7507093	
+          1e+01	1e-03	2.594183	0.8554863	
+          1e+02	1e-03	2.120036	0.6751115	
+          1e-03	1e-02	8.685074	0.8179124	
+          1e-02	1e-02	8.242179	0.7692930	
+          1e-01	1e-02	5.556555	0.6460357	
+          1e+00	1e-02	2.088004	0.7254578	
+          1e+01	1e-02	1.615847	0.6433051	
+          1e+02	1e-02	1.621082	0.6415757	
+          1e-03	1e-01	8.728804	0.8223642	
+          1e-02	1e-01	8.662643	0.8097531	
+          1e-01	1e-01	8.143349	0.7247699	
+          1e+00	1e-01	7.380374	0.8001499	
+          1e+01	1e-01	7.009282	0.8914761	
+          1e+02	1e-01	7.009282	0.8914761	
+          1e-03	1e+00	8.736279	0.8236107	
+          1e-02	1e+00	8.735986	0.8217589	
+          1e-01	1e+00	8.734875	0.8037311	
+          1e+00	1e+00	8.744292	0.7314770	
+          1e+01	1e+00	8.576852	0.7594888	
+          1e+02	1e+00	8.576852	0.7594888	
+          1e-03	1e+01	8.736402	0.8236676	
+          1e-02	1e+01	8.737213	0.8223241	
+          1e-01	1e+01	8.746837	0.8090230	
+          1e+00	1e+01	8.843988	0.7622132	
+          1e+01	1e+01	8.765956	0.8204965	
+          1e+02	1e+01	8.765956	0.8204965	
+          1e-03	1e+02	8.736402	0.8236676	
+          1e-02	1e+02	8.737213	0.8223241	
+          1e-01	1e+02	8.746837	0.8090231	
+          1e+00	1e+02	8.843989	0.7622142	
+          1e+01	1e+02	8.765958	0.8204991	
+          1e+02	1e+02	8.765958	0.8204991	
+          
+Training Set Accuracy:  1.0000000000 
+Test Set Accuracy:  1.0000000000           
+```
+
+
+# Random Forest and Variable Selection
+
+- Random Forest identified the top two predictors for differentiating digits 6 and 8, achieving an OOB error of 0.97%.
+
+- A second subset was created by selecting the top predictor and the least correlated variable from the top 10, yielding an OOB error of 6.36%.
+
+# Clustering
+
+- K-means Clustering: K-means was applied to partition the data into 2 to 7 clusters. The adjusted Rand index (ARI) for K=2 was 0.995, indicating effective clustering.
+
+- Hierarchical Clustering: Clustering was repeated with different linkage methods (complete, single, average, centroid). ARI values confirmed similar performance to K-means.
+
+- Scatter plots were produced for each partitioning method to visualize clustering results.
+
+# Support Vector Machines (SVM)
+
+- Linear Kernel: SVMs were trained with different cost values (0.001, 0.01, 0.1, 1, 10, 100). Higher cost values improved accuracy, but increased complexity.
+
+- Radial Kernel: SVMs with a radial kernel were trained with varying gamma values, showing improved accuracy compared to the linear kernel. Gamma = 10 provided the best performance.
+
+- Training and test errors were evaluated for each model, highlighting the effect of cost and gamma on decision boundaries and support vectors.
+
+# Cross-Validation with All Predictors
+
+- Using all 256 predictors, the best values for cost and gamma were determined using 10-fold cross-validation. The resulting SVM model achieved high classification accuracy on both training and test sets.
+
